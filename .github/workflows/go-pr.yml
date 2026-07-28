@@ -32,4 +32,23 @@ jobs:
             - name: Build
               run: go build -v ./...
             - name: Test
-              run: go test -v ./...
+              run: |
+                    go test -v -coverprofile coverage.out ./...
+                    mkdir coverage
+                    go tool cover -html coverage.out -o coverage/coverage.html
+            - name: coverage-summary
+              run: |
+                    echo "## Go coverage" >> "$GITHUB_STEP_SUMMARY"
+                    echo '```' >> "$GITHUB_STEP_SUMMARY"
+                    go tool cover -func coverage.out >> "$GITHUB_STEP_SUMMARY"
+                    echo '```' >> "$GITHUB_STEP_SUMMARY"
+            - name: upload-coverage-artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: coverage-report-${{ matrix.name }}
+                  path: coverage/
+            - name: coverage-threshold
+              continue-on-error: true
+              run: |
+                    PCT=$(go tool cover -func coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')
+                    awk -v pct="$PCT" 'BEGIN { exit !(pct+0 >= 0) }'

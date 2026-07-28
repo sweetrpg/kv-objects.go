@@ -1,6 +1,6 @@
 name: CI
 
-concurrency: ci
+concurrency: ci-${{ github.ref }}
 
 on:
     push:
@@ -19,6 +19,8 @@ jobs:
     tests:
         name: Build/test for ${{ matrix.name }}
         runs-on: ${{ matrix.os }}
+        permissions:
+            contents: write
         strategy:
             fail-fast: false
             matrix:
@@ -36,10 +38,37 @@ jobs:
             - name: Test
               run: |
                     go test -v -coverprofile coverage.out ./...
-                    go tool cover -func coverage.out
                     mkdir coverage
                     go tool cover -html coverage.out -o coverage/coverage.html
-            - name: publish-docs
+            - name: coverage-summary
+              run: |
+                    echo "## Go coverage" >> "$GITHUB_STEP_SUMMARY"
+                    echo '```' >> "$GITHUB_STEP_SUMMARY"
+                    go tool cover -func coverage.out >> "$GITHUB_STEP_SUMMARY"
+                    echo '```' >> "$GITHUB_STEP_SUMMARY"
+            - name: upload-coverage-artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: coverage-report-${{ matrix.name }}
+                  path: coverage/
+            # Warn-only: continue-on-error means this never blocks the job, only shows
+            # as a flagged step.
+            - name: coverage-threshold
+              continue-on-error: true
+              run: |
+                    PCT=$(go tool cover -func coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')
+                    echo "Coverage: ${PCT}%"
+                    awk -v pct="$PCT" 'BEGIN { exit !(pct+0 >= 0) }'
+            # Written into coverage/ so the publish step below carries it to GitHub Pages
+            # alongside the HTML report - avoids committing to the source branch.
+            - name: coverage-badge
+              continue-on-error: true
+              run: |
+                    PCT=$(go tool cover -func coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')
+                    COLOR=$(awk -v p="$PCT" 'BEGIN { if (p>=80) print "brightgreen"; else if (p>=50) print "yellow"; else print "red" }')
+                    printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' \
+                        "$PCT" "$COLOR" > coverage/coverage-badge.json
+            - name: publish-coverage
               uses: peaceiris/actions-gh-pages@v4
               with:
                 github_token: ${{ secrets.GITHUB_TOKEN }}
