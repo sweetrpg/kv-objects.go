@@ -1,6 +1,6 @@
 module github.com/sweetrpg/kv-objects
 
-go 1.23.3
+go 1.26.10
 
 require github.com/sweetrpg/model-core v0.0.159
 
